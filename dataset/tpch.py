@@ -1,6 +1,7 @@
 """Generate TPC-H CSV files and load the PostgreSQL benchmark tables."""
 
 import argparse
+import os
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -45,14 +46,36 @@ def generate(scale, output):
     print(f"TPC-H SF{scale} CSV files: {output}")
 
 
+def create_database():
+    import psycopg
+    from dotenv import load_dotenv
+    from psycopg import sql
+
+    load_dotenv(HERE.parent / ".env")
+    name = os.environ.get("PGDATABASE")
+    if not name:
+        raise SystemExit("Set PGDATABASE in .env before creating a database.")
+
+    # CREATE DATABASE must run outside a transaction on an existing database.
+    with psycopg.connect(dbname="postgres", autocommit=True) as db:
+        try:
+            db.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        except psycopg.errors.DuplicateDatabase:
+            print(f"Database already exists: {name}")
+        else:
+            print(f"Created database: {name}")
+
+
 def load(source, dsn):
     import psycopg
+    from dotenv import load_dotenv
 
     for table in TABLES:
         path = source / f"{table}.csv"
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"Missing or empty CSV: {path}")
 
+    load_dotenv(HERE.parent / ".env")
     counts = {}
     with psycopg.connect(dsn) as db, db.cursor() as cursor:
         cursor.execute((HERE / "schema.sql").read_text(encoding="utf-8"))
@@ -75,6 +98,7 @@ def main():
     generate_parser = commands.add_parser("generate", help="generate two CSV files")
     generate_parser.add_argument("--scale", required=True, type=scale_factor)
     generate_parser.add_argument("--output", required=True, type=Path)
+    commands.add_parser("create-db", help="create the PostgreSQL database set in .env")
     load_parser = commands.add_parser("load", help="load CSV files into PostgreSQL")
     load_parser.add_argument("--source", required=True, type=Path)
     load_parser.add_argument(
@@ -83,6 +107,8 @@ def main():
     args = parser.parse_args()
     if args.command == "generate":
         generate(args.scale, args.output)
+    elif args.command == "create-db":
+        create_database()
     else:
         load(args.source, args.dsn)
 
