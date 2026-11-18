@@ -2,3 +2,4 @@
 /.env
 /dataset/data/
 __pycache__/
+/advisor-results*.json
