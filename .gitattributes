@@ -1,0 +1,2 @@
+# Preserve the approved benchmark bytes and recorded SHA-256 values.
+benchmark/results/3c-four-rounds-2beee5cb9384/** -text

@@ -13,6 +13,7 @@ from dataset.prepare_sf1 import ROOT
 from .database import Database, verify_environment
 from .engine import Journal, dry_run, execute, recovery, save_new
 from .plan import build_plan, ddl_manifest, validate_plan, file_hash
+from .progress import LiveProgress
 
 
 def read_json(path):
@@ -39,6 +40,7 @@ def main(argv=None):
     run_command.add_argument("--plan", type=Path, required=True)
     run_command.add_argument("--run-dir", type=Path, required=True)
     run_command.add_argument("--approve-plan-sha256", required=True)
+    run_command.add_argument("--live-progress", action="store_true", help="optional same-terminal progress; falls back to text")
     recover_command = commands.add_parser("recover", help="default read-only recovery preview")
     recover_command.add_argument("--run-dir", type=Path, required=True)
     recover_command.add_argument("--execute", action="store_true")
@@ -77,7 +79,13 @@ def main(argv=None):
             save_new(args.output, result)
         elif args.command == "run":
             plan = read_json(args.plan)
-            result = execute(plan, source, args.run_dir, args.approve_plan_sha256)
+            options = {}
+            if args.live_progress:
+                try:
+                    options["progress"] = LiveProgress()
+                except Exception:
+                    pass  # Display initialization must not block the normal CLI.
+            result = execute(plan, source, args.run_dir, args.approve_plan_sha256, **options)
         else:
             plan = read_json(args.run_dir / "plan.json")
             saved_source = (args.run_dir / "workload.sql").read_bytes().decode("utf-8-sig")

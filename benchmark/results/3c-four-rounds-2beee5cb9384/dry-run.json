@@ -1,0 +1,27 @@
+{
+  "status": "dry_run_ok",
+  "created_at": "2026-11-20T17:48:45.828284+00:00",
+  "database": {
+    "database": "advisor_benchmark",
+    "database_oid": 16399,
+    "system_identifier": "7709417570490698016",
+    "server_version": "17.12",
+    "address": "::1/128",
+    "port": 5432,
+    "role": "postgres"
+  },
+  "plan_sha256": "9eaf530053f64954b2798f826bb71e6559382ad57d48e139a8a17dbe7c6ef47a",
+  "cells": 48,
+  "planned_create_count": 200,
+  "measurement": {
+    "warmup": 2,
+    "repeats": 5,
+    "statement_timeout_ms": 120000
+  },
+  "rounds": 4,
+  "indexes_before": [],
+  "indexes_after": [],
+  "ddl_executed": false,
+  "workload_executed": false,
+  "actual_index_sizes_measured": false
+}

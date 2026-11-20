@@ -110,7 +110,7 @@ def dry_run(plan, source, db):
             "ddl_executed": False, "workload_executed": False, "actual_index_sizes_measured": False}
 
 
-def execute(plan, source, directory, approval, *, database_factory=Database, runner=run_benchmark):
+def execute(plan, source, directory, approval, *, database_factory=Database, runner=run_benchmark, progress=None):
     if approval != plan["plan_sha256"]:
         raise SafetyError("Execution requires the exact reviewed plan SHA256")
     validate_plan(plan, source)
@@ -128,7 +128,25 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
     db = database_factory(allow_write=True)
     reader = None
     locked = False
+    current = None
+
+    def report(status):
+        nonlocal progress
+        if progress is None:
+            return
+        # Pass only new scalar metadata, never mutable plan/journal objects.
+        cell = current or {}
+        event = {"status": status, "completed": len(journal.data["cells"]),
+                 "total": len(plan["schedule"]), "rounds": plan["rounds"],
+                 "round": cell.get("round", "-"), "strategy": cell.get("strategy", "-"),
+                 "budget_mib": cell.get("budget_mib", "-")}
+        try:
+            progress(event)
+        except Exception:
+            progress = None  # Preserve normal execution/output if an observer fails.
+
     try:
+        report("starting")
         verify_environment(plan, db.capture())
         db.acquire()
         locked = True
@@ -137,11 +155,13 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
             raise SafetyError("Measurement connection differs from reviewed environment")
         statements = split_workload(source)
         for cell in plan["schedule"]:
+            current = cell
             verify_environment(plan, db.capture())
             entries = [{"spec": s, "oid": None, "state": "pending"} for s in cell["indexes"]]
             journal.data["entries"].extend(entries)
             journal.data["status"] = "building:" + cell["id"]
             journal.flush()  # Durable intent BEFORE CREATE; COMMENT is atomic with CREATE.
+            report("building")
             cell_result = {"id": cell["id"], "round": cell["round"], "budget_mib": cell["budget_mib"],
                 "strategy": cell["strategy"], "estimated_added_bytes": sum(s["estimated_bytes"] for s in cell["indexes"])}
             try:
@@ -156,6 +176,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
                 journal.flush()
                 save_new(directory / (cell["id"] + ".json"), cell_result)
                 verify_environment(plan, db.capture())
+                report("budget_exceeded")
                 continue
             for entry, index in zip(entries, built):
                 entry.update(oid=index["oid"], definition=index["definition"], table_oid=index["table_oid"], state="committed")
@@ -164,6 +185,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
             with db.guard_data():
                 if db.statistics_signature() != plan["environment"]["column_statistics_sha256"]:
                     raise SafetyError("Column statistics changed during index build")
+                report("prewarming")
                 prewarm_started = timestamp()
                 signature = db.data_signature()  # Identical full-table warmup/content check for EVERY cell.
                 prewarm_finished = timestamp()
@@ -182,6 +204,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
                 for index in actual:
                     index["managed_this_cell"] = index["name"] in expected_specs
                     index["estimated_bytes"] = expected_specs.get(index["name"], {}).get("estimated_bytes")
+                report("measuring")
                 raw = new_report(source, "workload/benchmark20.sql", BenchmarkConfig(**plan["measurement"]), cell["id"])
                 maintenance_before = db.maintenance()
                 try:
@@ -220,10 +243,13 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
                     raise SafetyError("Measurement incomplete, inventory changed, or actual budget exceeded")
                 cell_result.update(status="ok", actual_added_bytes=raw["actual_added_index_bytes_after"],
                                    performance_measured=True, summaries=raw["summaries"])
+            report("cleaning")
             clean(db, plan, journal)
             verify_environment(plan, db.capture())
             journal.data["cells"].append(cell_result)
             journal.flush()
+            report("cell_ok")
+        report("verifying")
         with db.guard_data():
             if db.data_signature() != journal.data["data_signature"]:
                 raise SafetyError("Final content signature changed")
@@ -237,6 +263,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
         journal.data["status"] = "failed"
         journal.data["error"] = type(exc).__name__ + ": " + str(exc)
         journal.flush()
+        report("failed")
         raise
     finally:
         try:
@@ -245,6 +272,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
         except BaseException as exc:
             journal.data["status"] = "cleanup_required"
             journal.data["cleanup_error"] = type(exc).__name__ + ": " + str(exc)
+            report("cleanup_required")
         finally:
             if reader:
                 reader.close()
@@ -255,6 +283,7 @@ def execute(plan, source, directory, approval, *, database_factory=Database, run
                 db.close()
                 journal.flush()
     save_new(directory / "summary.json", journal.data)
+    report(journal.data["status"])
     if journal.data["status"] not in {"complete", "complete_with_infeasible_configurations"}:
         raise SafetyError("Cleanup incomplete; use reviewed recovery procedure")
     return journal.data
