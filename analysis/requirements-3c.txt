@@ -1,0 +1,5 @@
+# Reporting dependencies used for the approved SF1 experiment artifacts.
+# Existing database / benchmark dependencies remain in dataset/requirements.txt.
+matplotlib==3.11.2
+numpy==2.4.6
+pypdf==7.1.1

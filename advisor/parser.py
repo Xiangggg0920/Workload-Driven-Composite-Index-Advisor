@@ -288,7 +288,10 @@ def _predicate(tokens: list[Token], aliases: dict[str, tuple[str, str]],
     if lcol and _literal(right):
         return [Predicate(*lcol, "equality" if op == "=" else "range", op)]
     if rcol and _literal(left):
-        return [Predicate(*rcol, "equality" if op == "=" else "range", op)]
+        # Predicates identify the column, so normalize literal OP column into
+        # column REVERSED_OP literal (e.g. 10 <= price means price >= 10).
+        reversed_op = {"=": "=", "<": ">", "<=": ">=", ">": "<", ">=": "<="}[op]
+        return [Predicate(*rcol, "equality" if op == "=" else "range", reversed_op)]
     raise ValueError("predicate is not a supported column-to-literal comparison or equijoin")
 
 
