@@ -19,6 +19,19 @@
 
 想自行重現時，再照第 2～5 節執行；只想用既有資料重畫圖，可直接看第 6 節。
 
+### 專案架構
+
+| 資料夾 | 主要用途 |
+| --- | --- |
+| `dataset/` | 產生 TPC-H 資料、匯入 PostgreSQL，並檢查資料完整性 |
+| `workload/` | Smoke 與正式 SQL、查詢驗證及覆蓋說明 |
+| `advisor/` | 解析 SQL，依儲存預算推薦複合索引 |
+| `strategy_benchmark/` | 規劃四策略實驗、管理實驗索引與中斷復原 |
+| `benchmark/` | 透過 EXPLAIN 測量查詢，保存時間、Buffers 與 Query Plan |
+| `analysis/` | 整理實驗結果、產生 CSV 與圖表，以及索引預算分析 |
+| `tests/` | 自動化測試與回歸測試 |
+| `report/` | Proposal、研究設計與階段成果紀錄 |
+
 ## 2. 環境與安裝
 
 以下指令在 Windows PowerShell 的專案根目錄執行。查看既有成果不用安裝套件；離線畫圖需要 Python，自己重測才需要 PostgreSQL 和 `.env`。
